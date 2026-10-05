@@ -39,6 +39,7 @@
     M(IcebergMetadataLogElement) \
     M(DeltaMetadataLogElement) \
     M(PredicateStatisticsLogElement) \
+    M(QueryJoinLogElement) \
 
 #define SYSTEM_LOG_ELEMENTS_CLOUD(M) \
     M(DistributedCacheLogElement) \

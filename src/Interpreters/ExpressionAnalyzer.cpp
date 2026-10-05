@@ -1,6 +1,7 @@
 #include <memory>
 
 #include <Core/Block.h>
+#include <Core/Joins.h>
 #include <Core/Settings.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -30,6 +31,7 @@
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinSwitcher.h>
+#include <Interpreters/QueryJoinLog.h>
 #include <Interpreters/SpillingHashJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/DirectJoin.h>
@@ -1141,11 +1143,21 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
 {
     auto right_sample_block = joined_plan->getCurrentHeader();
     const auto & join_algorithms = analyzed_join->getEnabledJoinAlgorithms();
+    String requested_algorithms;
+    for (const auto alg : join_algorithms)
+    {
+        if (!requested_algorithms.empty())
+            requested_algorithms += ",";
+        requested_algorithms += toString(alg);
+    }
     for (const auto alg : join_algorithms)
     {
         auto join = tryCreateJoin(alg, analyzed_join, left_sample_columns, right_sample_block, joined_plan, context);
         if (join)
+        {
+            QueryAlgorithmReport::noteChosen(context, join.get(), requested_algorithms, join->getName());
             return join;
+        }
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,

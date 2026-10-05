@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/QueryJoinLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <IO/WriteHelpers.h>
 #include <Planner/PlannerContext.h>
@@ -205,6 +206,7 @@ private:
 
         if (distributed_product_mode == DistributedProductMode::LOCAL)
         {
+            QueryAlgorithmReport::noteProductMode(getContext(), "local_rewrite");
             std::optional<StorageID> resolved_remote_storage_id;
 
             bool database_can_be_changed = distributed_storage->getCluster()->maybeCrossReplication();
@@ -227,6 +229,8 @@ private:
         else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings()[Setting::prefer_global_in_and_join]) &&
             !in_function_or_join_stack.empty())
         {
+            const bool prefer_global = distributed_product_mode != DistributedProductMode::GLOBAL && getSettings()[Setting::prefer_global_in_and_join];
+            QueryAlgorithmReport::noteProductMode(getContext(), prefer_global ? "prefer_global_in_and_join" : "global_rewrite");
             auto * in_or_join_node_to_modify = in_function_or_join_stack.back().query_node.get();
 
             if (auto * in_function_to_modify = in_or_join_node_to_modify->as<FunctionNode>())
@@ -244,10 +248,12 @@ private:
         }
         else if (distributed_product_mode == DistributedProductMode::ALLOW)
         {
+            QueryAlgorithmReport::noteProductMode(getContext(), "allow");
             return;
         }
         else if (distributed_product_mode == DistributedProductMode::DENY)
         {
+            QueryAlgorithmReport::noteProductMode(getContext(), "deny");
             throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
                 "Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny'). "
                 "You may rewrite query to use local tables "

@@ -35,5 +35,6 @@
     <iceberg_metadata_log><database>system</database><table>iceberg_metadata_log</table></iceberg_metadata_log>
     <delta_lake_metadata_log><database>system</database><table>delta_lake_metadata_log</table></delta_lake_metadata_log>
     <predicate_statistics_log><database>system</database><table>predicate_statistics_log</table></predicate_statistics_log>
+    <query_join_log><database>system</database><table>query_join_log</table></query_join_log>
     <histogram_metric_log><database>system</database><table>histogram_metric_log</table></histogram_metric_log>
 </clickhouse>

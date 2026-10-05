@@ -1,5 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/JoinSwitcher.h>
+#include <Interpreters/QueryJoinLog.h>
+#include <Common/CurrentThread.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/JoinUtils.h>
@@ -41,10 +43,13 @@ bool JoinSwitcher::addBlockToJoin(const Block & block, bool)
 bool JoinSwitcher::switchJoin()
 {
     HashJoin * hash_join = assert_cast<HashJoin *>(join.get());
+    const size_t rows = hash_join->getTotalRowCount();
+    const size_t bytes = hash_join->getTotalByteCount();
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(true);
 
     /// Destroy old join & create new one.
     join = std::make_shared<MergeJoin>(table_join, std::make_shared<const Block>(right_sample_block));
+    QueryAlgorithmReport::noteSwitch(CurrentThread::tryGetQueryContext(), this, "PartialMergeJoin", "memory_limit", bytes, rows);
 
     bool success = true;
     for (const Block & saved_block : right_blocks)

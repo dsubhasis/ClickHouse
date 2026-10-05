@@ -4,6 +4,8 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/QueryJoinLog.h>
+#include <Common/CurrentThread.h>
 #include <Processors/Port.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 
@@ -243,6 +245,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     {
         Block block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
         ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, block.rows());
+        QueryAlgorithmReport::addProbeRows(CurrentThread::tryGetQueryContext(), join.get(), block.rows());
         join_result = join->joinBlock(std::move(block));
     }
 
@@ -340,6 +343,7 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 
     if (finish_counter->isLast())
     {
+        QueryAlgorithmReport::finishBuild(CurrentThread::tryGetQueryContext(), join.get());
         join->onBuildPhaseFinish();
         if (join->hasPostBuildPhase())
         {
@@ -370,6 +374,7 @@ void FillingRightJoinSideTransform::work()
     else
     {
         ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
+        QueryAlgorithmReport::addBuildRows(CurrentThread::tryGetQueryContext(), join.get(), num_rows, block.bytes());
         stop_reading = !join->addBlockToJoin(block, num_rows, true);
     }
 

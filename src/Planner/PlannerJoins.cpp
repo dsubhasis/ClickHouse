@@ -49,6 +49,8 @@
 #include <Planner/Utils.h>
 
 #include <Core/Joins.h>
+#include <Interpreters/QueryJoinLog.h>
+#include <Common/CurrentThread.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
@@ -1361,6 +1363,27 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     lock_acquire_timeout = lock_acquire_timeout_;
 }
 
+static String formatJoinAlgorithms(const std::vector<JoinAlgorithm> & algorithms)
+{
+    String requested;
+    for (const auto alg : algorithms)
+    {
+        if (!requested.empty())
+            requested += ",";
+        requested += toString(alg);
+    }
+    return requested;
+}
+
+static std::shared_ptr<IJoin> noteChosenJoin(std::shared_ptr<IJoin> join, const String & requested)
+{
+    if (join)
+    {
+        QueryAlgorithmReport::noteChosen(CurrentThread::tryGetQueryContext(), join.get(), requested, join->getName());
+    }
+    return join;
+}
+
 std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
@@ -1397,7 +1420,9 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
                 required_column_names.push_back(source_column_name_it->second);
         }
 
-        return storage->getJoinLocked(table_join, params.initial_query_id, params.lock_acquire_timeout, required_column_names);
+        return noteChosenJoin(
+            storage->getJoinLocked(table_join, params.initial_query_id, params.lock_acquire_timeout, required_column_names),
+            formatJoinAlgorithms(table_join->getEnabledJoinAlgorithms()));
     }
 
     /** JOIN with constant.
@@ -1408,7 +1433,9 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
         if (!table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
 
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+        return noteChosenJoin(
+            std::make_shared<HashJoin>(table_join, right_table_expression_header),
+            formatJoinAlgorithms(table_join->getEnabledJoinAlgorithms()));
     }
 
     /** We have only one way to execute a CROSS JOIN - with a hash join.
@@ -1417,11 +1444,14 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
       * then the setting `cross_to_inner_join_rewrite` may be used, and unsupported cases will fail earlier.
       */
     if (table_join->kind() == JoinKind::Cross)
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+        return noteChosenJoin(
+            std::make_shared<HashJoin>(table_join, right_table_expression_header),
+            formatJoinAlgorithms(table_join->getEnabledJoinAlgorithms()));
 
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
 
+    const String requested_algorithms = formatJoinAlgorithms(table_join->getEnabledJoinAlgorithms());
     for (auto algorithm : table_join->getEnabledJoinAlgorithms())
     {
         auto join = tryCreateJoin(
@@ -1432,7 +1462,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             right_table_expression_header,
             params);
         if (join)
-            return join;
+            return noteChosenJoin(std::move(join), requested_algorithms);
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,

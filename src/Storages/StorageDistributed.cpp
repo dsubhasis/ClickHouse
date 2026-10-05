@@ -1,4 +1,5 @@
 #include <Storages/StorageDistributed.h>
+#include <Interpreters/QueryJoinLog.h>
 
 #include <Databases/IDatabase.h>
 
@@ -495,6 +496,8 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
                 LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}",
                         has_sharding_key ? "" : " (no sharding key)");
             }
+
+            QueryAlgorithmReport::noteShards(local_context, getCluster()->getShardCount(), nodes);
         }
     }
 
@@ -503,7 +506,11 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         if (settings[Setting::distributed_group_by_no_merge] == DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION)
         {
             if (settings[Setting::distributed_push_down_limit])
+            {
+                QueryAlgorithmReport::noteProcessingStage(local_context, QueryProcessingStage::toString(QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit));
                 return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+            }
+            QueryAlgorithmReport::noteProcessingStage(local_context, QueryProcessingStage::toString(QueryProcessingStage::WithMergeableStateAfterAggregation));
             return QueryProcessingStage::WithMergeableStateAfterAggregation;
         }
 
@@ -516,6 +523,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         /// The caller may request a lower stage (e.g. StorageMerge passes
         /// WithMergeableState when it wraps multiple tables), but that's fine —
         /// the caller handles storage_stage > processed_stage correctly.
+        QueryAlgorithmReport::noteProcessingStage(local_context, QueryProcessingStage::toString(QueryProcessingStage::Complete));
         return QueryProcessingStage::Complete;
     }
 
@@ -550,11 +558,12 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
     if (optimized_stage)
     {
-        if (*optimized_stage == QueryProcessingStage::Complete)
-            return std::min(to_stage, *optimized_stage);
-        return *optimized_stage;
+        const auto stage = *optimized_stage == QueryProcessingStage::Complete ? std::min(to_stage, *optimized_stage) : *optimized_stage;
+        QueryAlgorithmReport::noteProcessingStage(local_context, QueryProcessingStage::toString(stage));
+        return stage;
     }
 
+    QueryAlgorithmReport::noteProcessingStage(local_context, QueryProcessingStage::toString(QueryProcessingStage::WithMergeableState));
     return QueryProcessingStage::WithMergeableState;
 }
 

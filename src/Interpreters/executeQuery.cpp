@@ -13,6 +13,7 @@
 #include <Common/SignalHandlers.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/QueryJoinLog.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
@@ -543,6 +544,9 @@ QueryLogElement logQueryStart(
 
 static void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, std::chrono::system_clock::time_point finish_time, QueryStatusInfoPtr info)
 {
+    if (!internal)
+        QueryAlgorithmReport::flush(context);
+
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
     {
         auto interval_milliseconds = getQueryMetricLogInterval(context);

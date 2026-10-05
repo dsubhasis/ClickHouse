@@ -1,4 +1,6 @@
+#include <Interpreters/QueryJoinLog.h>
 #include <Interpreters/SpillingHashJoin.h>
+#include <Common/CurrentThread.h>
 
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/GraceHashJoin.h>
@@ -178,6 +180,13 @@ void SpillingHashJoin::switchToGraceHashJoin()
             ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
 
             print_threshold_reached_log(concurrent_join, "ConcurrentHashJoin");
+            QueryAlgorithmReport::noteSwitch(
+                CurrentThread::tryGetQueryContext(),
+                this,
+                "GraceHashJoin",
+                "memory_limit",
+                concurrent_join->getTotalByteCount(),
+                concurrent_join->getTotalRowCount());
 
             /// Create GraceHashJoin.
             grace_join = std::make_shared<GraceHashJoin>(
@@ -203,6 +212,13 @@ void SpillingHashJoin::switchToGraceHashJoin()
     }
 
     print_threshold_reached_log(hash_join, "HashJoin");
+    QueryAlgorithmReport::noteSwitch(
+        CurrentThread::tryGetQueryContext(),
+        this,
+        "GraceHashJoin",
+        "memory_limit",
+        hash_join->getTotalByteCount(),
+        hash_join->getTotalRowCount());
     /// Single-thread path: extract from HashJoin, feed to GraceHashJoin.
     ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/false);

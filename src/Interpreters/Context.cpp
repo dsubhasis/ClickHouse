@@ -103,6 +103,7 @@
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/QueryJoinLog.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
@@ -6241,6 +6242,16 @@ std::shared_ptr<PredicateStatisticsLog> Context::getPredicateStatisticsLog() con
         return {};
 
     return shared->system_logs->predicate_statistics_log;
+}
+
+std::shared_ptr<QueryJoinLog> Context::getQueryJoinLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->query_join_log;
 }
 
 SystemLogs Context::getSystemLogs() const
